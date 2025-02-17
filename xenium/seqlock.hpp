@@ -131,7 +131,13 @@ struct seqlock {
   void update(Func func);
 
 private:
-  using storage_t = typename std::aligned_storage<sizeof(T), alignof(T)>::type;
+
+  struct StorageStructAk
+  {
+    alignas(T) std::byte data[sizeof(T)];
+  };
+  
+  using storage_t = StorageStructAk;
   using sequence_t = uintptr_t;
   using copy_t = uintptr_t;
 
@@ -230,12 +236,12 @@ template <class T, class... Policies>
 void seqlock<T, Policies...>::read_data(T& dest, const storage_t& src) const {
   auto* pdest = reinterpret_cast<copy_t*>(&dest);
   auto* pend = pdest + (sizeof(T) / sizeof(copy_t));
-  const auto* psrc = reinterpret_cast<const std::atomic<copy_t>*>(&src);
+  const auto* psrc = reinterpret_cast<const std::atomic<copy_t>*>(&src.data);
   for (; pdest != pend; ++psrc, ++pdest) {
     *pdest = psrc->load(std::memory_order_relaxed);
   }
   // (6) - this acquire-fence synchronizes-with the release-fence (7)
-  XENIUM_THREAD_FENCE(std::memory_order_acquire);
+  std::atomic_thread_fence(std::memory_order_acquire);
 
   // Effectively this fence transforms the previous relaxed-loads into acquire-loads. This
   // is necessary to enforce an order with the subsequent load of _seq, so that these
@@ -248,11 +254,11 @@ void seqlock<T, Policies...>::read_data(T& dest, const storage_t& src) const {
 template <class T, class... Policies>
 void seqlock<T, Policies...>::store_data(const T& src, storage_t& dest) {
   // (7) - this release-fence synchronizes-with the acquire-fence (6)
-  XENIUM_THREAD_FENCE(std::memory_order_release);
+  std::atomic_thread_fence(std::memory_order_release);
 
   const auto* psrc = reinterpret_cast<const copy_t*>(&src);
   const auto* pend = psrc + (sizeof(T) / sizeof(copy_t));
-  auto* pdest = reinterpret_cast<std::atomic<copy_t>*>(&dest);
+  auto* pdest = reinterpret_cast<std::atomic<copy_t>*>(&dest.data);
   for (; psrc != pend; ++psrc, ++pdest) {
     pdest->store(*psrc, std::memory_order_relaxed);
   }
