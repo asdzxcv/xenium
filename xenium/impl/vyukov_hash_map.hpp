@@ -27,7 +27,7 @@ namespace xenium {
 template <class Key, class Value, class... Policies>
 struct vyukov_hash_map<Key, Value, Policies...>::bucket_state {
   bucket_state() = default;
-  
+
   [[nodiscard]] bucket_state locked() const noexcept { return bucket_state(value | lock); }
   [[nodiscard]] bucket_state clear_lock() const {
     assert(value & lock);
@@ -194,10 +194,10 @@ vyukov_hash_map<Key, Value, Policies...>::~vyukov_hash_map() {
     while (it != end()) {
       try {
         erase(it);
-      } catch(...) {
+      } catch (...) {
       }
     }
-  } catch(...) {
+  } catch (...) {
   }
   delete data_block.load().get();
 }
@@ -255,8 +255,9 @@ retry:
   }
 
   if (item_count < bucket_item_count) {
+    // TODO - need release-store here?
     traits::template store_item<AcquireAccessor>(
-      bucket.key[item_count], bucket.value[item_count], h, std::move(key), factory(), std::memory_order_relaxed, acc);
+      bucket.key[item_count], bucket.value[item_count], h, std::move(key), factory(), acc);
     callback(std::move(acc), bucket.value[item_count]);
     // release the bucket lock and increment the item count
     // (3) - this release-store synchronizes-with the acquire-CAS (7, 30, 34, 37) and the acquire-load (23)
@@ -281,8 +282,7 @@ retry:
     goto retry;
   }
   try {
-    traits::template store_item<AcquireAccessor>(
-      extension->key, extension->value, h, std::move(key), factory(), std::memory_order_relaxed, acc);
+    traits::template store_item<AcquireAccessor>(extension->key, extension->value, h, std::move(key), factory(), acc);
   } catch (...) {
     free_extension_item(extension);
     throw;
