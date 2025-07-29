@@ -52,6 +52,8 @@ struct managed_ptr_value {
   bool operator==(T* const other) const noexcept {
     return this->v == other->v;
   }
+
+  inline friend std::ostream& operator<<(std::ostream& os, const managed_ptr_value& p) { return os << p.v; }
 };
 
 template <class Key, class Value, class Reclaimer>
@@ -99,6 +101,8 @@ struct VyukovHashMap : ::testing::Test {
   struct node : Reclaimer::template enable_concurrent_ptr<node> {
     explicit node(int v) : v(v) {}
     int v;
+
+    inline friend std::ostream& operator<<(std::ostream& os, const node& n) { return os << n.v; }
   };
 
   using MapValueType =
@@ -380,12 +384,13 @@ TYPED_TEST(VyukovHashMap, parallel_usage) {
         auto value = this->make_comparison_value(k);
         [[maybe_unused]] typename Reclaimer::region_guard guard{};
         for (int j = 0; j < MaxIterations / keys_per_thread; ++j) {
-          [[maybe_unused]] typename Reclaimer::region_guard gaurd{};
+          [[maybe_unused]] typename Reclaimer::region_guard guard{};
           EXPECT_TRUE(this->map.emplace(key, this->make_value(k)));
           for (int x = 0; x < 10; ++x) {
             typename TestFixture::hash_map::accessor acc;
-            EXPECT_TRUE(this->map.try_get_value(key, acc));
-            EXPECT_EQ(value, *acc);
+            EXPECT_TRUE(this->map.try_get_value(key, acc))
+              << "k=" << k << ", j=" << j << ", x=" << x << ", thread=" << i;
+            EXPECT_EQ(value, *acc) << "k=" << k << "j=" << j << ", x=" << x << ", thread=" << i;
           }
           if ((j + i) % 8 == 0) {
             for (auto it = this->map.begin(); it != this->map.end();) {
@@ -424,7 +429,7 @@ TYPED_TEST(VyukovHashMap, parallel_usage_with_same_values) {
 
   std::vector<std::thread> threads;
   for (int i = 0; i < 8; ++i) {
-    threads.push_back(std::thread([this] {
+    threads.push_back(std::thread([this, i] {
       for (int j = 0; j < MaxIterations / 10; ++j) {
         for (int k = 0; k < 10; ++k) {
           auto key = this->make_key(k);
@@ -432,11 +437,11 @@ TYPED_TEST(VyukovHashMap, parallel_usage_with_same_values) {
           this->map.emplace(key, this->make_value(k));
           typename TestFixture::hash_map::accessor acc;
           if (this->map.try_get_value(key, acc)) {
-            EXPECT_EQ(this->make_comparison_value(k), *acc);
+            EXPECT_EQ(this->make_comparison_value(k), *acc) << "j=" << j << ", thread=" << i;
           }
 
           if (j % 8 == 0) {
-            // just iterator through the map, but don't really do anything
+            // just iterate through the map, but don't really do anything
             for (auto v : this->map) {
               (void)v;
             }
